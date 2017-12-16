@@ -26,30 +26,33 @@ require('yargs')
     .argv
 
 async function ping (args) {
-  function success (...args) {
-    console.log(args.join(' '))
-  }
-  function error (...args) {
-    console.log(chalk.red(args.join(' ')))
-  }
+  const timeout = ms(args.timeout)
+  const line = console.log
 
-  function log (result, response) {
-    if (response) {
-      if (result.statusCode >= 200 && result.statusCode <= 399) {
-        success(new Date().toLocaleTimeString(), result.statusCode, 'took', response.elapsedTime, 'ms')
-      } else {
-        error(new Date().toLocaleTimeString(), result.statusCode, 'took', response.elapsedTime, 'ms')
-      }
-    } else {
-      error(new Date().toLocaleTimeString(), chalk.red('timeout'))
+  const results = {
+    success: {
+      requests: 0,
+      elapsedTime: 0
+    },
+    failure: {
+      requests: 0,
+      elapsedTime: 0
     }
   }
 
+  let isDone = false
+  process.on('SIGINT', () => {
+    isDone = true
+  })
+
   try {
     do {
+      if (isDone) {
+        break
+      }
       await request({
         url: args.url,
-        timeout: ms(args.timeout),
+        timeout: timeout,
         time: true,
         resolveWithFullResponse: true
       }).then(response => {
@@ -61,5 +64,37 @@ async function ping (args) {
   } catch (err) {
     process.exitCode = 1
     outputError(err)
+  }
+  done()
+
+  function success (...args) {
+    line(args.join(' '))
+  }
+  function error (...args) {
+    line(chalk.red(args.join(' ')))
+  }
+  function done () {
+    line('========')
+    line('Results  Requests  Elapsed')
+    line('Success ', results.success.requests.toString().padStart(8), (results.success.elapsedTime / 1000 + 's').toString().padStart(8))
+    line('Failure ', results.failure.requests.toString().padStart(8), (results.failure.elapsedTime / 1000 + 's').toString().padStart(8))
+  }
+
+  function log (result, response) {
+    if (response) {
+      if (result.statusCode >= 200 && result.statusCode <= 399) {
+        results.success.requests++
+        results.success.elapsedTime += response.elapsedTime
+        success(new Date().toLocaleTimeString(), result.statusCode, 'took', response.elapsedTime, 'ms')
+      } else {
+        results.failure.requests++
+        results.failure.elapsedTime += response.elapsedTime
+        error(new Date().toLocaleTimeString(), result.statusCode, 'took', response.elapsedTime, 'ms')
+      }
+    } else {
+      results.failure.requests++
+      results.failure.elapsedTime += timeout
+      error(new Date().toLocaleTimeString(), chalk.red('timeout'))
+    }
   }
 }
