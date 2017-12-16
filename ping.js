@@ -2,9 +2,117 @@
 
 const request = require('request-promise-native')
 const ms = require('ms')
-const chalk = require('chalk')
 
-const outputError = require('./lib/output')
+const {line, success, error, fail} = require('./lib/output')
+
+async function run (constructor, argv) {
+  try {
+    const command = new constructor(argv)
+    await command.run()
+  } catch (err) {
+    process.exitCode = 1
+    fail(err)
+  }
+}
+
+class Results {
+  constructor () {
+    this.success = {
+      requests: 0,
+      elapsedTime: 0
+    }
+    this.failure = {
+      requests: 0,
+      elapsedTime: 0
+    }
+  }
+
+  addSuccess (elapsedTime) {
+    this.success.requests++
+    this.success.elapsedTime += elapsedTime
+  }
+
+  addFailure (elapsedTime) {
+    this.failure.requests++
+    this.failure.elapsedTime += elapsedTime
+  }
+
+  report () {
+    line('========')
+    line('Results  Requests  Elapsed')
+    line('Success ', this.success.requests.toString().padStart(8), (this.success.elapsedTime / 1000 + 's').toString().padStart(8))
+    line('Failure ', this.failure.requests.toString().padStart(8), (this.failure.elapsedTime / 1000 + 's').toString().padStart(8))
+  }
+}
+
+class Ping {
+  constructor (args) {
+    this.results = new Results()
+    this.url = args.url
+    this.timeout = ms(args.timeout)
+    this.forever = args.interval
+    this.onStop = this.stop.bind(this)
+  }
+
+  stop () {
+    this.isDone = true
+  }
+
+  onBegin() {
+    process.on('SIGINT', this.onStop)
+  }
+
+  onEnd() {
+    process.removeListener('SIGINT', this.onStop)
+  }
+
+  async onRun() {
+    this.isDone = false
+
+    do {
+      await request({
+        url: this.url,
+        timeout: this.timeout,
+        time: true,
+        resolveWithFullResponse: true
+      }).then(response => {
+        this.log(response, response)
+      }, error => {
+        this.log(error, error.response)
+      })
+
+      if (this.isDone) {
+        break
+      }
+    } while (this.forever)
+
+    this.results.report()
+  }
+
+  async run () {
+      this.onBegin()
+      try {
+          await this.onRun()
+      } finally {
+          this.onEnd()
+      }
+  }
+
+  log (result, response) {
+    if (response) {
+      if (result.statusCode >= 200 && result.statusCode <= 399) {
+        this.results.addSuccess(response.elapsedTime)
+        success(new Date().toLocaleTimeString(), result.statusCode, 'took', response.elapsedTime, 'ms')
+      } else {
+        this.results.addFailure(response.elapsedTime)
+        error(new Date().toLocaleTimeString(), result.statusCode, 'took', response.elapsedTime, 'ms')
+      }
+    } else {
+      this.results.addFailure(this.timeout)
+      error(new Date().toLocaleTimeString(), 'timeout')
+    }
+  }
+}
 
 require('yargs')
     .command('* <url>', 'ping the server', (yargs) => {
@@ -22,79 +130,5 @@ require('yargs')
               describe: 'maximum time to wait for a response',
               default: '30s'
             })
-    }, (argv) => ping(argv))
+    }, (argv) => run(Ping, argv))
     .argv
-
-async function ping (args) {
-  const timeout = ms(args.timeout)
-  const line = console.log
-
-  const results = {
-    success: {
-      requests: 0,
-      elapsedTime: 0
-    },
-    failure: {
-      requests: 0,
-      elapsedTime: 0
-    }
-  }
-
-  let isDone = false
-  process.on('SIGINT', () => {
-    isDone = true
-  })
-
-  try {
-    do {
-      if (isDone) {
-        break
-      }
-      await request({
-        url: args.url,
-        timeout: timeout,
-        time: true,
-        resolveWithFullResponse: true
-      }).then(response => {
-        log(response, response)
-      }, error => {
-        log(error, error.response)
-      })
-    } while (args.interval)
-  } catch (err) {
-    process.exitCode = 1
-    outputError(err)
-  }
-  done()
-
-  function success (...args) {
-    line(args.join(' '))
-  }
-  function error (...args) {
-    line(chalk.red(args.join(' ')))
-  }
-  function done () {
-    line('========')
-    line('Results  Requests  Elapsed')
-    line('Success ', results.success.requests.toString().padStart(8), (results.success.elapsedTime / 1000 + 's').toString().padStart(8))
-    line('Failure ', results.failure.requests.toString().padStart(8), (results.failure.elapsedTime / 1000 + 's').toString().padStart(8))
-  }
-
-  function log (result, response) {
-    if (response) {
-      if (result.statusCode >= 200 && result.statusCode <= 399) {
-        results.success.requests++
-        results.success.elapsedTime += response.elapsedTime
-        success(new Date().toLocaleTimeString(), result.statusCode, 'took', response.elapsedTime, 'ms')
-      } else {
-        results.failure.requests++
-        results.failure.elapsedTime += response.elapsedTime
-        error(new Date().toLocaleTimeString(), result.statusCode, 'took', response.elapsedTime, 'ms')
-      }
-    } else {
-      results.failure.requests++
-      results.failure.elapsedTime += timeout
-      error(new Date().toLocaleTimeString(), chalk.red('timeout'))
-    }
-  }
-}
