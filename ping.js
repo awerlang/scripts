@@ -2,6 +2,7 @@
 
 const request = require('request-promise-native')
 const ms = require('ms')
+const chalk = require('chalk')
 
 const outputError = require('./lib/output')
 
@@ -25,11 +26,22 @@ require('yargs')
     .argv
 
 async function ping (args) {
+  function success (...args) {
+    console.log(args.join(' '))
+  }
+  function error (...args) {
+    console.log(chalk.red(args.join(' ')))
+  }
+
   function log (result, response) {
     if (response) {
-      console.log(new Date().toLocaleTimeString(), result.statusCode, 'took', response.elapsedTime, 'ms')
+      if (result.statusCode >= 200 && result.statusCode <= 399) {
+        success(new Date().toLocaleTimeString(), result.statusCode, 'took', response.elapsedTime, 'ms')
+      } else {
+        error(new Date().toLocaleTimeString(), result.statusCode, 'took', response.elapsedTime, 'ms')
+      }
     } else {
-      console.log(new Date().toLocaleTimeString(), 'timeout')
+      error(new Date().toLocaleTimeString(), chalk.red('timeout'))
     }
   }
 
