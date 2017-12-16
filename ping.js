@@ -1,6 +1,6 @@
 // Usage: ping http://www.webapp.com -t 30s -i
 
-const request = require('request-promise-native')
+const request = require('request')
 const ms = require('ms')
 
 const {line, success, error, fail} = require('./lib/output')
@@ -56,32 +56,42 @@ class Ping {
 
   stop () {
     this.isDone = true
+    this.currentRequest.abort()
   }
 
-  onBegin() {
+  onBegin () {
     process.on('SIGINT', this.onStop)
   }
 
-  onEnd() {
+  onEnd () {
     process.removeListener('SIGINT', this.onStop)
   }
 
-  async onRun() {
+  async onRun () {
     this.isDone = false
 
     do {
-      await request({
-        url: this.url,
-        timeout: this.timeout,
-        time: true,
-        resolveWithFullResponse: true
-      }).then(response => {
-        this.log(response, response)
-      }, err => {
-        if (err.code !== 'ETIMEDOUT') {
-            throw err
-        }
-        this.log(err, err.response)
+      await new Promise((resolve, reject) => {
+        this.currentRequest = request({
+          url: this.url,
+          timeout: this.timeout,
+          time: true,
+          resolveWithFullResponse: true
+        }).on('error', (err, response) => {
+          if (err.code !== 'ETIMEDOUT') {
+            reject(err)
+            return
+          }
+          if (!this.isDone) {
+            this.log(err, err.response)
+          }
+        }).on('abort', () => {
+          // .abort() doesn't clear the timeout, so there will be a delay yet
+          resolve()
+        }).on('response', response => {
+          this.log(response, response)
+          resolve()
+        })
       })
 
       if (this.isDone) {
@@ -93,12 +103,12 @@ class Ping {
   }
 
   async run () {
-      this.onBegin()
-      try {
-          await this.onRun()
-      } finally {
-          this.onEnd()
-      }
+    this.onBegin()
+    try {
+      await this.onRun()
+    } finally {
+      this.onEnd()
+    }
   }
 
   log (result, response) {
