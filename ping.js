@@ -77,8 +77,11 @@ class Ping {
         resolveWithFullResponse: true
       }).then(response => {
         this.log(response, response)
-      }, error => {
-        this.log(error, error.response)
+      }, err => {
+        if (err.code !== 'ETIMEDOUT') {
+            throw err
+        }
+        this.log(err, err.response)
       })
 
       if (this.isDone) {
