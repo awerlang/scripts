@@ -1,0 +1,23 @@
+{
+  "name": "scripts",
+  "version": "1.0.0",
+  "description": "Collection of useful scripts",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/awerlang/scripts.git"
+  },
+  "author": "André Werlang",
+  "license": "MIT",
+  "bugs": {
+    "url": "https://github.com/awerlang/scripts/issues"
+  },
+  "homepage": "https://github.com/awerlang/scripts#readme",
+  "dependencies": {
+    "standard": "10.0.3",
+    "yargs": "10.0.3"
+  }
+}
